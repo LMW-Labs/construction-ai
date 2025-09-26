@@ -1,395 +1,190 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-// ===== USER MANAGEMENT =====
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
-  role      UserRole @default(WORKER)
-  phone     String?
-  avatar    String?
+  role      String   @default("USER")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // Relations
-  ownedProjects     Project[]      @relation("ProjectOwner")
-  assignedProjects  ProjectMember[]
-  tasks            TaskAssignment[]
-  equipment        Equipment[]     @relation("EquipmentOperator")
-  safetyReports    SafetyReport[]
-  posts            Post[]
-  timeEntries      TimeEntry[]
   
-  @@map("users")
+  posts            Post[]
+  ownedProjects    Project[]         @relation("ProjectOwner")
+  projectMembers   ProjectMember[]
+  taskAssignments  TaskAssignment[]
+  equipmentOps     Equipment[]       @relation("EquipmentOperator")
+  safetyReports    SafetyReport[]
 }
 
-enum UserRole {
-  ADMIN
-  PROJECT_MANAGER
-  CONTRACTOR
-  WORKER
-  SAFETY_INSPECTOR
-  CLIENT
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  author    User     @relation(fields: [authorId], references: [id])
 }
 
-// ===== PROJECT MANAGEMENT =====
 model Project {
-  id          String        @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
-  status      ProjectStatus @default(PLANNING)
+  status      String   @default("PLANNING")
   startDate   DateTime?
   endDate     DateTime?
   budget      Float?
-  actualCost  Float?        @default(0)
+  actualCost  Float    @default(0)
   address     String?
-  latitude    Float?
-  longitude   Float?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  // Relations
-  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
   ownerId     String
-  members     ProjectMember[]
-  tasks       Task[]
-  equipment   Equipment[]
-  materials   Material[]
-  safetyReports SafetyReport[]
-  progressPhotos ProgressPhoto[]
-  estimates   CostEstimate[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
-  @@map("projects")
-}
-
-enum ProjectStatus {
-  PLANNING
-  IN_PROGRESS
-  ON_HOLD
-  COMPLETED
-  CANCELLED
+  owner         User              @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members       ProjectMember[]
+  tasks         Task[]
+  equipment     Equipment[]
+  costEstimates CostEstimate[]
+  safetyReports SafetyReport[]
 }
 
 model ProjectMember {
   id        String   @id @default(cuid())
-  role      String   // Site Manager, Foreman, etc.
+  role      String   @default("MEMBER")
   joinedAt  DateTime @default(now())
-  
-  project   Project  @relation(fields: [projectId], references: [id])
   projectId String
-  user      User     @relation(fields: [userId], references: [id])
   userId    String
   
-  @@unique([projectId, userId])
-  @@map("project_members")
-}
-
-// ===== TASK MANAGEMENT =====
-model Task {
-  id          String     @id @default(cuid())
-  title       String
-  description String?
-  status      TaskStatus @default(TODO)
-  priority    Priority   @default(MEDIUM)
-  startDate   DateTime?
-  dueDate     DateTime?
-  completedAt DateTime?
-  estimatedHours Float?
-  actualHours    Float?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  // Relations
-  project     Project          @relation(fields: [projectId], references: [id])
-  projectId   String
-  assignments TaskAssignment[]
-  dependencies TaskDependency[] @relation("ParentTask")
-  dependsOn    TaskDependency[] @relation("ChildTask")
+  project   Project  @relation(fields: [projectId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
   
-  @@map("tasks")
+  @@unique([projectId, userId])
 }
 
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  REVIEW
-  COMPLETED
-  BLOCKED
-}
-
-enum Priority {
-  LOW
-  MEDIUM
-  HIGH
-  URGENT
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  description     String?
+  status          String    @default("TODO")
+  priority        String    @default("MEDIUM")
+  startDate       DateTime?
+  dueDate         DateTime?
+  estimatedHours  Float?
+  actualHours     Float?
+  completedAt     DateTime?
+  projectId       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  project     Project          @relation(fields: [projectId], references: [id])
+  assignments TaskAssignment[]
 }
 
 model TaskAssignment {
-  id       String @id @default(cuid())
-  assignedAt DateTime @default(now())
+  id     String @id @default(cuid())
+  taskId String
+  userId String
   
-  task     Task   @relation(fields: [taskId], references: [id])
-  taskId   String
-  user     User   @relation(fields: [userId], references: [id])
-  userId   String
+  task   Task   @relation(fields: [taskId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
   
   @@unique([taskId, userId])
-  @@map("task_assignments")
 }
 
-model TaskDependency {
-  id           String @id @default(cuid())
-  
-  parentTask   Task   @relation("ParentTask", fields: [parentTaskId], references: [id])
-  parentTaskId String
-  childTask    Task   @relation("ChildTask", fields: [childTaskId], references: [id])
-  childTaskId  String
-  
-  @@unique([parentTaskId, childTaskId])
-  @@map("task_dependencies")
-}
-
-// ===== EQUIPMENT MANAGEMENT =====
 model Equipment {
-  id                String            @id @default(cuid())
-  name              String
-  type              EquipmentType
-  model             String?
-  serialNumber      String?           @unique
-  status            EquipmentStatus   @default(AVAILABLE)
-  purchaseDate      DateTime?
-  purchasePrice     Float?
-  hourlyRate        Float?
-  dailyRate         Float?
-  lastMaintenance   DateTime?
-  nextMaintenance   DateTime?
-  location          String?
-  notes             String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-
-  // Relations
-  project           Project?          @relation(fields: [projectId], references: [id])
-  projectId         String?
-  operator          User?             @relation("EquipmentOperator", fields: [operatorId], references: [id])
-  operatorId        String?
-  maintenanceRecords MaintenanceRecord[]
+  id                 String    @id @default(cuid())
+  name               String
+  type               String
+  model              String?
+  serialNumber       String?
+  status             String    @default("AVAILABLE")
+  purchaseDate       DateTime?
+  purchasePrice      Float?
+  hourlyRate         Float?
+  dailyRate          Float?
+  lastMaintenance    DateTime?
+  nextMaintenance    DateTime?
+  location           String?
+  notes              String?
+  projectId          String?
+  operatorId         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   
-  @@map("equipment")
-}
-
-enum EquipmentType {
-  EXCAVATOR
-  BULLDOZER
-  CRANE
-  LOADER
-  DUMP_TRUCK
-  CONCRETE_MIXER
-  GENERATOR
-  COMPRESSOR
-  SCAFFOLDING
-  TOOLS
-  OTHER
-}
-
-enum EquipmentStatus {
-  AVAILABLE
-  IN_USE
-  MAINTENANCE
-  OUT_OF_ORDER
-  RENTED_OUT
+  project           Project?          @relation(fields: [projectId], references: [id])
+  operator          User?             @relation("EquipmentOperator", fields: [operatorId], references: [id])
+  maintenanceRecords MaintenanceRecord[]
 }
 
 model MaintenanceRecord {
-  id          String   @id @default(cuid())
-  type        String   // "Routine", "Repair", "Inspection"
+  id          String    @id @default(cuid())
+  type        String
   description String
   cost        Float?
-  performedAt DateTime @default(now())
+  performedAt DateTime
   performedBy String?
   nextDue     DateTime?
-  
-  equipment   Equipment @relation(fields: [equipmentId], references: [id])
   equipmentId String
   
-  @@map("maintenance_records")
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
 }
 
-// ===== MATERIALS & INVENTORY =====
-model Material {
-  id            String      @id @default(cuid())
-  name          String
-  category      String      // "Concrete", "Steel", "Wood", etc.
-  unit          String      // "tons", "cubic yards", "pieces"
-  quantityStock Float       @default(0)
-  unitPrice     Float?
-  supplier      String?
-  reorderLevel  Float?
-  location      String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  // Relations
-  project       Project     @relation(fields: [projectId], references: [id])
-  projectId     String
-  usage         MaterialUsage[]
-  
-  @@map("materials")
-}
-
-model MaterialUsage {
-  id          String   @id @default(cuid())
-  quantity    Float
-  usedAt      DateTime @default(now())
-  notes       String?
-  
-  material    Material @relation(fields: [materialId], references: [id])
-  materialId  String
-  
-  @@map("material_usage")
-}
-
-// ===== COST ESTIMATION & TRACKING =====
 model CostEstimate {
-  id          String           @id @default(cuid())
-  name        String
-  totalCost   Float
-  laborCost   Float?
-  materialCost Float?
+  id            String   @id @default(cuid())
+  name          String
+  totalCost     Float
+  laborCost     Float?
+  materialCost  Float?
   equipmentCost Float?
-  overheadCost Float?
-  profitMargin Float?
-  status      EstimateStatus   @default(DRAFT)
-  validUntil  DateTime?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-
-  // Relations
-  project     Project          @relation(fields: [projectId], references: [id])
-  projectId   String
-  lineItems   EstimateLineItem[]
+  overheadCost  Float?
+  profitMargin  Float?
+  status        String   @default("DRAFT")
+  validUntil    DateTime?
+  projectId     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
   
-  @@map("cost_estimates")
+  project     Project               @relation(fields: [projectId], references: [id])
+  lineItems   CostEstimateLineItem[]
 }
 
-enum EstimateStatus {
-  DRAFT
-  SUBMITTED
-  APPROVED
-  REJECTED
-  EXPIRED
-}
-
-model EstimateLineItem {
-  id          String       @id @default(cuid())
+model CostEstimateLineItem {
+  id          String  @id @default(cuid())
   description String
   quantity    Float
   unit        String
   unitPrice   Float
   totalPrice  Float
-  category    String       // "Labor", "Materials", "Equipment"
-  
-  estimate    CostEstimate @relation(fields: [estimateId], references: [id])
+  category    String
   estimateId  String
   
-  @@map("estimate_line_items")
+  estimate    CostEstimate @relation(fields: [estimateId], references: [id])
 }
 
-// ===== SAFETY & COMPLIANCE =====
 model SafetyReport {
-  id          String         @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
   description String
-  severity    SafetySeverity
-  status      ReportStatus   @default(OPEN)
+  severity    String
+  status      String    @default("OPEN")
   location    String?
-  photos      String[]       // Array of photo URLs
-  resolvedAt  DateTime?
+  photos      String?
   resolution  String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-
-  // Relations
-  project     Project        @relation(fields: [projectId], references: [id])
+  resolvedAt  DateTime?
   projectId   String
-  reporter    User           @relation(fields: [reporterId], references: [id])
   reporterId  String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   
-  @@map("safety_reports")
-}
-
-enum SafetySeverity {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum ReportStatus {
-  OPEN
-  IN_PROGRESS
-  RESOLVED
-  CLOSED
-}
-
-// ===== PROGRESS TRACKING =====
-model ProgressPhoto {
-  id          String   @id @default(cuid())
-  url         String
-  caption     String?
-  location    String?
-  latitude    Float?
-  longitude   Float?
-  takenAt     DateTime @default(now())
-  metadata    Json?    // Camera settings, weather, etc.
-  
-  // AI Analysis Results
-  aiAnalysis  Json?    // AI-detected objects, progress percentage, etc.
-  
-  project     Project  @relation(fields: [projectId], references: [id])
-  projectId   String
-  
-  @@map("progress_photos")
-}
-
-// ===== TIME TRACKING =====
-model TimeEntry {
-  id          String   @id @default(cuid())
-  startTime   DateTime
-  endTime     DateTime?
-  totalHours  Float?
-  description String?
-  location    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String
-  
-  @@map("time_entries")
-}
-
-// ===== COMMUNICATION =====
-model Post {
-  id        String   @id @default(cuid())
-  title     String?
-  content   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  String
-  
-  @@map("posts")
+  project     Project @relation(fields: [projectId], references: [id])
+  reporter    User    @relation(fields: [reporterId], references: [id])
 }
